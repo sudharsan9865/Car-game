@@ -1,2 +1,2 @@
 # Car-game
-Jumping Car Game using HTML,
+Jumping Car Game Using HTML
