@@ -1,0 +1,16 @@
+<style>
+    .image-box {
+      width: 300px;
+      height: 200px;
+      background-image: url("https://www.google.com/imgres?q=police&imgurl=https%3A%2F%2Fupload.wikimedia.org%2Fwikipedia%2Fcommons%2F3%2F38%2FGcp_patrol_car.jpg&imgrefurl=https%3A%2F%2Fblog.ipleaders.in%2Fwhat-to-do-when-the-police-shows-up-at-your-party%2F&docid=ZCXBJai4C1sH4M&tbnid=PuT3RkcOVnfZ2M&vet=12ahUKEwikmZKQz4qQAxX1UGwGHYMyA3IQM3oECCYQAA..i&w=2272&h=1704&hcb=2&ved=2ahUKEwikmZKQz4qQAxX1UGwGHYMyA3IQM3oECCYQAA");
+      background-size: cover;
+      background-position: center;
+      border: 2px solid black;
+    }
+  </style>
+</head>
+<body>
+  <h1>Image Example</h1>
+  <div class="image-box"></div>
+</body>
+</html>

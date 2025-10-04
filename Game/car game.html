@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>City Pursuit</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@700;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #e9ebef; /* Soft background */
+      }
+
+      #gameCanvas {
+        border: 4px solid #1f2937; /* Dark border */
+        border-radius: 8px;
+        background-color: #4b5563; /* Asphalt/Road color */
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        touch-action: none; /* Prevents mobile scrolling/zooming */
+      }
+
+      .game-ui {
+        background-color: #1f2937; /* Gray-800 */
+      }
+
+      /* Hide modal initially */
+      .modal-backdrop {
+        background-color: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(2px);
+        z-index: 50;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <!-- Game Container -->
+    <div class="w-full max-w-lg mx-auto">
+      <h1
+        class="text-3xl font-black text-center text-gray-800 mb-4 tracking-wider"
+      >
+        City Police
+      </h1>
+
+      <!-- Scoreboard and Controls -->
+      <div
+        class="game-ui flex justify-between items-center p-3 rounded-t-lg shadow-lg"
+      >
+        <div class="text-center text-white">
+          <span class="text-sm opacity-75">SCORE</span>
+          <span id="score" class="text-2xl font-bold text-yellow-300 block"
+            >0</span
+          >
+        </div>
+        <div class="text-center text-white">
+          <span class="text-sm opacity-75">HIGH SCORE</span>
+          <span id="highScore" class="text-2xl font-bold text-green-300 block"
+            >0</span
+          >
+        </div>
+        <button
+          id="startButton"
+          class="px-5 py-2 bg-green-500 text-white font-black rounded-lg shadow-md hover:bg-green-600 transition duration-150 transform hover:scale-105"
+        >
+          Start Run
+        </button>
+      </div>
+
+      <!-- Canvas -->
+      <canvas id="gameCanvas" width="700" height="300" class="block"></canvas>
+
+      <!-- Mobile/Desktop Instructions -->
+      <p class="text-center text-gray-600 mt-3 text-sm">
+        Press **SPACE** or **Tap** to Jump!
+      </p>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div
+      id="modal"
+      class="modal-backdrop fixed inset-0 flex items-center justify-center hidden"
+    >
+      <div
+        id="modal-card"
+        class="bg-white p-8 rounded-xl w-11/12 max-w-xs text-center shadow-2xl border-4 border-red-500"
+      >
+        <h2 id="modal-title" class="text-4xl font-black text-gray-800 mb-4">
+          CRASH!
+        </h2>
+        <p class="text-xl text-gray-600 mb-2">Final Score:</p>
+        <p id="modal-score" class="text-5xl font-extrabold text-red-600 mb-4">
+          0
+        </p>
+        <p
+          id="modal-high-score"
+          class="text-md text-gray-700 mb-6 font-semibold"
+        ></p>
+        <button
+          id="restartButton"
+          class="w-full py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150"
+        >
+          Run Again
+        </button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        // --- CONSTANTS & DOM ELEMENTS ---
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreDisplay = document.getElementById("score");
+        const highScoreDisplay = document.getElementById("highScore");
+        const startButton = document.getElementById("startButton");
+        const restartButton = document.getElementById("restartButton");
+        const modal = document.getElementById("modal");
+        const modalScore = document.getElementById("modal-score");
+        const modalHighScore = document.getElementById("modal-high-score");
+
+        const CANVAS_WIDTH = canvas.width;
+        const CANVAS_HEIGHT = canvas.height;
+        // Adjusted ground position relative to the new canvas height (300) for better visibility.
+        const GROUND_Y = CANVAS_HEIGHT - 40;
+
+        // --- GAME STATE ---
+        let gameStatus = "ready"; // 'ready', 'playing', 'over'
+        let score = 0;
+        let highScore = 0;
+        let gameLoopId = null;
+        let frameCount = 0;
+        let baseSpeed = 5; // Horizontal movement speed
+        let currentSpeed = baseSpeed;
+
+        // --- GAME OBJECTS ---
+        const player = {
+          x: 50,
+          y: GROUND_Y,
+          width: 45, // Slightly wider for cruiser look
+          height: 25, // Slightly taller
+          vy: 0, // Vertical velocity
+          gravity: 0.8,
+          isJumping: false,
+          color: "#3b82f6", // Blue-500 for a police car
+        };
+
+        let obstacles = [];
+        let lastObstacleTime = 0;
+        let obstacleInterval = 100; // frames before checking for new obstacle
+
+        // --- LOCAL STORAGE ---
+        function loadHighScore() {
+          const storedScore = localStorage.getItem("dinoRunnerHighScore");
+          highScore = storedScore ? parseInt(storedScore) : 0;
+          highScoreDisplay.textContent = highScore;
+        }
+
+        function saveHighScore() {
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem("dinoRunnerHighScore", highScore);
+            highScoreDisplay.textContent = highScore;
+            return true;
+          }
+          return false;
+        }
+
+        // --- DRAWING FUNCTIONS ---
+
+        function drawPlayer() {
+          const x = player.x;
+          const y = player.y - player.height; // Top Y position of the car body
+          const w = player.width;
+          const h = player.height;
+
+          // 1. Draw Car Body (Blue)
+          ctx.fillStyle = player.color; // Main Blue color
+          ctx.fillRect(x, y + 5, w, h - 5); // Main body
+
+          // 2. Draw White Stripe (Police detail)
+          ctx.fillStyle = "#f8fafc"; // White
+          ctx.fillRect(x + 5, y + 10, w - 10, 5);
+
+          // 3. Draw Cabin/Windshield (Gray)
+          ctx.fillStyle = "#94a3b8"; // Slate-400
+          ctx.beginPath();
+          ctx.moveTo(x + 10, y + 5);
+          ctx.lineTo(x + w - 10, y + 5);
+          ctx.lineTo(x + w - 5, y);
+          ctx.lineTo(x + 15, y);
+          ctx.closePath();
+          ctx.fill();
+
+          // 4. Draw Wheels (Dark Gray)
+          const wheelColor = "#374151"; // Gray-700
+          const wheelRadius = 6;
+          ctx.fillStyle = wheelColor;
+
+          // Front wheel
+          ctx.beginPath();
+          ctx.arc(x + 12, player.y, wheelRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Back wheel
+          ctx.beginPath();
+          ctx.arc(x + w - 12, player.y, wheelRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 5. Police Light Bar (Flashing Effect)
+          const lightBarY = y - 5;
+          const lightBarW = 20;
+          const lightBarH = 5;
+          const lightBarX = x + w / 2 - lightBarW / 2;
+
+          // Flash based on frameCount
+          if (Math.floor(frameCount / 5) % 2 === 0) {
+            // Red light on left, Dark Blue on right
+            ctx.fillStyle = "#ef4444"; // Red
+            ctx.fillRect(lightBarX, lightBarY, lightBarW / 2, lightBarH);
+            ctx.fillStyle = "#1e3a8a"; // Dark Blue
+            ctx.fillRect(
+              lightBarX + lightBarW / 2,
+              lightBarY,
+              lightBarW / 2,
+              lightBarH
+            );
+          } else {
+            // Dark Red on left, Bright Blue on right
+            ctx.fillStyle = "#88170c"; // Dark Red
+            ctx.fillRect(lightBarX, lightBarY, lightBarW / 2, lightBarH);
+            ctx.fillStyle = "#3b82f6"; // Bright Blue
+            ctx.fillRect(
+              lightBarX + lightBarW / 2,
+              lightBarY,
+              lightBarW / 2,
+              lightBarH
+            );
+          }
+        }
+
+        function drawGround() {
+          // The main road surface color is set by the canvas background (#4b5563)
+
+          ctx.strokeStyle = "#4b5563"; // Gray-600
+          ctx.lineWidth = 4;
+
+          // Draw the ground line (curb/edge of road - for the collision boundary)
+          ctx.beginPath();
+          ctx.moveTo(0, GROUND_Y);
+          ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
+          ctx.stroke();
+
+          // Draw lane divider lines (dashed white/yellow lines)
+          ctx.fillStyle = "#fef3c7"; // Light yellow for dashes
+          const dashLength = 15;
+          const dashGap = 15;
+          // Calculate offset based on speed
+          let dashOffset = (frameCount * currentSpeed) % (dashLength + dashGap);
+
+          // Draw dashes slightly above the ground line to look like lane markings
+          const dashY = GROUND_Y - 8;
+          for (
+            let x = -dashOffset;
+            x < CANVAS_WIDTH;
+            x += dashLength + dashGap
+          ) {
+            ctx.fillRect(x, dashY, dashLength, 2);
+          }
+        }
+
+        function drawObstacles() {
+          // Obstacles are traffic cones/pylons
+          obstacles.forEach((obs) => {
+            const x = obs.x;
+            const y = obs.y - obs.height;
+            const w = obs.width;
+            const h = obs.height;
+
+            // 1. Draw Cone Base (Orange)
+            ctx.fillStyle = "#f97316"; // Orange-500
+            ctx.fillRect(x, y + h - 5, w, 5); // Base
+
+            // 2. Draw Cone Body (Trapezoid shape for pylon)
+            ctx.beginPath();
+            // Define trapezoid corners
+            ctx.moveTo(x + w * 0.2, y + h - 5);
+            ctx.lineTo(x + w * 0.8, y + h - 5);
+            ctx.lineTo(x + w, y);
+            ctx.lineTo(x, y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 3. Draw Reflective Stripe (White)
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(x + w * 0.1, y + h * 0.4, w * 0.8, 4);
+          });
+        }
+
+        // --- GAME LOGIC ---
+
+        /**
+         * Advances the player (handles jump physics).
+         */
+        function updatePlayer() {
+          if (player.isJumping) {
+            player.y += player.vy;
+            player.vy += player.gravity;
+
+            if (player.y >= GROUND_Y) {
+              player.y = GROUND_Y;
+              player.isJumping = false;
+              player.vy = 0;
+            }
+          }
+        }
+
+        /**
+         * Handles new obstacle spawning and movement.
+         */
+        function updateObstacles() {
+          // 1. Move obstacles
+          obstacles.forEach((obs) => {
+            obs.x -= currentSpeed;
+          });
+
+          // 2. Remove obstacles that went off screen
+          obstacles = obstacles.filter((obs) => obs.x + obs.width > 0);
+
+          // 3. Check for new obstacle spawning
+          const intervalAdjusted = obstacleInterval - Math.floor(score / 500);
+          if (frameCount - lastObstacleTime > Math.max(20, intervalAdjusted)) {
+            // 1 in 10 chance to spawn a new one every check
+            if (Math.random() < 0.1) {
+              spawnObstacle();
+              lastObstacleTime = frameCount;
+            }
+          }
+        }
+
+        /**
+         * Spawns a new obstacle (traffic cone).
+         */
+        function spawnObstacle() {
+          const obsWidth = 15 + Math.random() * 10;
+          const obsHeight = 20 + Math.random() * 15;
+          obstacles.push({
+            x: CANVAS_WIDTH + 10, // Start just off screen
+            y: GROUND_Y,
+            width: obsWidth,
+            height: obsHeight,
+          });
+        }
+
+        /**
+         * Checks for collision between player and any obstacle.
+         */
+        function checkCollision() {
+          const p = player;
+
+          for (let i = 0; i < obstacles.length; i++) {
+            const o = obstacles[i];
+
+            // AABB (Axis-Aligned Bounding Box) collision check
+            if (
+              p.x < o.x + o.width &&
+              p.x + p.width > o.x &&
+              // Collision check must account for the car's height being less than GROUND_Y
+              p.y - p.height < o.y && // Top of player below bottom of obstacle
+              p.y > o.y - o.height
+            ) {
+              // Bottom of player below top of obstacle
+
+              return true; // Collision detected
+            }
+          }
+          return false;
+        }
+
+        /**
+         * Handles the jump action.
+         */
+        function jump() {
+          if (!player.isJumping) {
+            player.isJumping = true;
+            player.vy = -12; // Initial upward velocity
+          }
+        }
+
+        /**
+         * The main game loop driven by requestAnimationFrame.
+         */
+        function gameLoop() {
+          if (gameStatus !== "playing") return;
+
+          // 1. Clear Canvas
+          ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          // 2. Update Game State
+          updatePlayer();
+          updateObstacles();
+
+          // 3. Draw Elements
+          drawGround();
+          drawObstacles();
+          drawPlayer();
+
+          // 4. Collision Check
+          if (checkCollision()) {
+            gameOver();
+            return;
+          }
+
+          // 5. Update Score and Speed
+          score += 1;
+          scoreDisplay.textContent = score;
+          currentSpeed = baseSpeed + score / 500; // Speed gradually increases
+          frameCount++;
+
+          gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- GAME MANAGEMENT ---
+
+        function resetGame() {
+          score = 0;
+          currentSpeed = baseSpeed;
+          obstacles = [];
+          frameCount = 0;
+          player.y = GROUND_Y;
+          player.vy = 0;
+          player.isJumping = false;
+
+          scoreDisplay.textContent = score;
+
+          modal.classList.add("hidden");
+          startButton.style.display = "none";
+          gameStatus = "playing";
+
+          gameLoop();
+        }
+
+        function gameOver() {
+          gameStatus = "over";
+          cancelAnimationFrame(gameLoopId);
+
+          const isNewHighScore = saveHighScore();
+
+          modalScore.textContent = score;
+          modalHighScore.textContent = isNewHighScore
+            ? `New High Score: ${highScore}`
+            : `Your Best: ${highScore}`;
+
+          document.getElementById("modal-title").textContent = isNewHighScore
+            ? "NEW RECORD!"
+            : "CRASH!";
+          modal.classList.remove("hidden");
+          startButton.style.display = "block";
+        }
+
+        function startGame() {
+          if (gameStatus === "playing") return;
+          loadHighScore();
+          resetGame();
+        }
+
+        // --- INPUT HANDLERS ---
+
+        document.addEventListener("keydown", (e) => {
+          if (gameStatus === "playing" && e.code === "Space") {
+            e.preventDefault();
+            jump();
+          } else if (gameStatus === "ready" || gameStatus === "over") {
+            // Allow SPACE to start game too
+            if (e.code === "Space") {
+              e.preventDefault();
+              startGame();
+            }
+          }
+        });
+
+        canvas.addEventListener("mousedown", (e) => {
+          if (gameStatus === "playing") {
+            jump();
+          } else {
+            startGame();
+          }
+        });
+
+        canvas.addEventListener(
+          "touchstart",
+          (e) => {
+            e.preventDefault();
+            if (gameStatus === "playing") {
+              jump();
+            } else {
+              startGame();
+            }
+          },
+          { passive: false }
+        );
+
+        // --- INITIALIZATION ---
+        startButton.addEventListener("click", startGame);
+        restartButton.addEventListener("click", startGame);
+
+        // Load and draw initial state
+        loadHighScore();
+        drawGround();
+        drawPlayer();
+      })();
+    </script>
+  </body>
+</html>
